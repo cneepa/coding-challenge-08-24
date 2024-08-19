@@ -1,0 +1,132 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: nginx
+  labels:
+    name: nginx
+    team: devops
+---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  namespace: nginx
+  labels:
+    app: nginx-server
+    team: devops
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+      team: devops
+  template:
+    metadata:
+      labels:
+        app: nginx
+        team: devops
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: nginx
+          image: nginx:alpine3.20-slim
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 10m
+              memory: 256Mi
+            limits:
+              cpu: 10m
+              memory: 256Mi
+          securityContext:
+            capabilities:
+              drop:
+                - all
+              add: [ 'NET_BIND_SERVICE', 'CHOWN', 'SETGID', 'SETUID' ]
+            allowPrivilegeEscalation: false
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - nginx-server
+                  - key: team
+                    operator: In
+                    values:
+                      - devops
+              topologyKey: kubernetes.io/hostname
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+---
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-server-svc
+  namespace: nginx
+  labels:
+    app: nginx-server
+    team: devops
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: nginx
+    team: devops
+---
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nginx-server-hpa
+  namespace: nginx
+  labels:
+    app: hpa
+    team: devops
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nginx-deployment
+  minReplicas: 5
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+---
